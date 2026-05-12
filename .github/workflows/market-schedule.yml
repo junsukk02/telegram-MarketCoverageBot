@@ -5,6 +5,7 @@ on:
     - cron: '0 23 * * 0-4'
     - cron: '35 6 * * 1-5'
     - cron: '0 12 * * 1-5'
+    - cron: '*/5 * * * *'
 
 jobs:
   send-market-alert:
@@ -23,6 +24,10 @@ jobs:
           python-version: "3.11"
 
       - run: pip install -r requirements.txt
+
+      - name: Schedule test
+        if: github.event.schedule == '*/5 * * * *'
+        run: python market_bot.py evening
 
       - name: Morning
         if: github.event.schedule == '0 23 * * 0-4'
