@@ -24,8 +24,8 @@ def send_telegram(text):
     res.raise_for_status()
 
 
-def direction_emoji(pct):
-    return "🟢" if pct >= 0 else "🔴"
+def direction_emoji(value):
+    return "🟢" if value >= 0 else "🔴"
 
 
 def get_yf_close_pct(ticker):
@@ -46,24 +46,36 @@ def get_yf_close_pct(ticker):
     return latest, pct
 
 
-def fmt_index(name, value, pct):
-    emoji = direction_emoji(pct)
-    return f"{name}: {value:,.2f} ({emoji} {pct:+.2f}%)"
+def get_us10y():
+    df = yf.download(
+        "^TNX",
+        period="7d",
+        interval="1d",
+        progress=False,
+        auto_adjust=False
+    )
+
+    df = df.dropna()
+
+    latest = float(df["Close"].iloc[-1]) / 10
+    prev = float(df["Close"].iloc[-2]) / 10
+
+    bps_change = (latest - prev) * 100
+
+    return latest, bps_change
 
 
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
-    us10y_raw, _ = get_yf_close_pct("^TNX")
-
-    us10y = us10y_raw / 10
+    us10y, us10y_bps = get_us10y()
 
     msg = f"""
 <b>Good Morning Junsuk! 오늘 하루도 열심히 합시다!</b>
 
 NASDAQ 전일 종가: {nasdaq:,.2f} ({direction_emoji(nasdaq_pct)} {nasdaq_pct:+.2f}%)
 S&P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%)
-US10Y Yield: {us10y:.3f}%
+US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.0f}bps)
 """.strip()
 
     send_telegram(msg)
