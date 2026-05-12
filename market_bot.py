@@ -18,6 +18,8 @@ HK = ZoneInfo("Asia/Hong_Kong")
 KOSPI_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd"
 KOSDAQ_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kosdaq_dd_trd"
 DERIVATIVE_INDEX_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/drvprod_dd_trd"
+KOSPI_STOCK_FUTURES_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/drv/eqsfu_stk_bydd_trd"
+KOSDAQ_STOCK_FUTURES_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/drv/eqkfu_ksq_bydd_trd"
 
 
 def send_telegram(text):
@@ -188,37 +190,66 @@ def get_krx_index(index_name, endpoint):
 
     raise ValueError(f"{index_name} 데이터를 최근 10일 내에서 찾을 수 없습니다.")
 
-def get_krx_derivative_indices():
-    target_names = [
-        "코스피 200 선물지수",
-        "코스닥 150 선물지수",
-    ]
-
+def get_krx_futures(endpoint, market_name="야간", limit=5):
     for bas_dd in get_recent_dates(10):
-        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
+        rows = call_krx_api(endpoint, bas_dd)
 
         if not rows:
             continue
 
-        matched = []
+        futures = []
 
-        for target in target_names:
-            for row in rows:
-                name = row.get("IDX_NM", "")
+        for row in rows:
+            mkt_name = row.get("MKT_NM", "")
+            name = row.get("ISU_NM", "")
+            close_raw = row.get("TDD_CLSPRC", "-")
+            change_raw = row.get("CMPPREVDD_PRC", "-")
+            volume_raw = row.get("ACC_TRDVOL", "0")
+            value_raw = row.get("ACC_TRDVAL", "0")
 
-                if name == target:
-                    matched.append({
-                        "name": name,
-                        "close": parse_num(row.get("CLSPRC_IDX")),
-                        "change": parse_num(row.get("CMPPREVDD_IDX")),
-                        "pct": parse_num(row.get("FLUC_RT")),
-                    })
+            if mkt_name != market_name:
+                continue
 
-        if matched:
-            return matched
+            if close_raw in ["-", "", None]:
+                continue
+
+            if volume_raw in ["-", "", "0", None]:
+                continue
+
+            futures.append({
+                "name": name,
+                "close": parse_num(close_raw),
+                "change": parse_num(change_raw),
+                "volume": parse_num(volume_raw),
+                "trading_value": parse_num(value_raw),
+            })
+
+        if futures:
+            futures = sorted(
+                futures,
+                key=lambda x: x["trading_value"],
+                reverse=True
+            )
+
+            return futures[:limit]
 
     return []
 
+
+def format_futures_list(futures):
+    if not futures:
+        return "데이터 없음"
+
+    lines = []
+
+    for item in futures:
+        lines.append(
+            f'{html.escape(item["name"])}: '
+            f'{item["close"]:,.2f} '
+            f'({direction_emoji(item["change"])} {item["change"]:+,.2f})'
+        )
+
+    return "\n".join(lines)
 
 def get_weather(lat, lon):
     try:
@@ -285,45 +316,25 @@ def get_investor_flow(market):
     }
 
 
-def get_krx_derivative_indices():
-    for bas_dd in get_recent_dates(10):
-        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
-
-        if not rows:
-            continue
-
-        indices = []
-
-        for row in rows:
-            name = row.get("IDX_NM", "")
-
-            if not name:
-                continue
-
-            indices.append({
-                "name": name,
-                "close": parse_num(row.get("CLSPRC_IDX")),
-                "change": parse_num(row.get("CMPPREVDD_IDX")),
-                "pct": parse_num(row.get("FLUC_RT")),
-            })
-
-        if indices:
-            return indices
-
-    return []
-
-
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
 
-    derivative_indices = get_krx_derivative_indices()
+    kospi_night_futures = get_krx_futures(
+        KOSPI_STOCK_FUTURES_ENDPOINT,
+        market_name="야간",
+        limit=5
+    )
 
-    derivative_text = "\n".join([
-        f'{html.escape(item["name"])}: {item["close"]:,.2f} ({direction_emoji(item["pct"])} {item["pct"]:+.2f}%)'
-        for item in derivative_indices
-    ]) or "데이터 없음"
+    kosdaq_night_futures = get_krx_futures(
+        KOSDAQ_STOCK_FUTURES_ENDPOINT,
+        market_name="야간",
+        limit=5
+    )
+
+    kospi_night_futures_text = format_futures_list(kospi_night_futures)
+    kosdaq_night_futures_text = format_futures_list(kosdaq_night_futures)
 
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
@@ -345,12 +356,16 @@ NASDAQ 전일 종가: {nasdaq:,.2f} ({direction_emoji(nasdaq_pct)} {nasdaq_pct:+
 S&P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%)
 US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.0f}bps)
 
-<b>KRX 파생상품지수</b>
-{derivative_text}
+<b>KRX 야간 Futures</b>
+
+<b>KOSPI</b>
+{kospi_night_futures_text}
+
+<b>KOSDAQ</b>
+{kosdaq_night_futures_text}
 """.strip()
 
     send_telegram(msg)
-
 
 def afternoon_report():
     kospi, kospi_pct = get_yf_close_pct("^KS11")
@@ -358,11 +373,26 @@ def afternoon_report():
 
     kospi_flow = get_investor_flow("KOSPI")
     kosdaq_flow = get_investor_flow("KOSDAQ")
-    
+
     save_flow_snapshot(kospi_flow, kosdaq_flow)
 
     nikkei, nikkei_pct = get_yf_close_pct("^N225")
     hsi, hsi_pct = get_yf_close_pct("^HSI")
+
+    kospi_regular_futures = get_krx_futures(
+        KOSPI_STOCK_FUTURES_ENDPOINT,
+        market_name="정규",
+        limit=5
+    )
+
+    kosdaq_regular_futures = get_krx_futures(
+        KOSDAQ_STOCK_FUTURES_ENDPOINT,
+        market_name="정규",
+        limit=5
+    )
+
+    kospi_regular_futures_text = format_futures_list(kospi_regular_futures)
+    kosdaq_regular_futures_text = format_futures_list(kosdaq_regular_futures)
 
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
@@ -380,6 +410,14 @@ Good Afternoon Junsuk!
 
 KOSPI 종가: {kospi:,.2f} ({direction_emoji(kospi_pct)} {kospi_pct:+.2f}%)
 KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
+
+<b>KRX Regular Futures</b>
+
+<b>KOSPI</b>
+{kospi_regular_futures_text}
+
+<b>KOSDAQ</b>
+{kosdaq_regular_futures_text}
 
 <b>KOSPI 순매수</b>
 개인: {fmt_amount(kospi_flow["개인"])}
