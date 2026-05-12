@@ -15,6 +15,7 @@ HK = ZoneInfo("Asia/Hong_Kong")
 
 KOSPI_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd"
 KOSDAQ_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kosdaq_dd_trd"
+DERIVATIVE_INDEX_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/drvprod_dd_trd"
 
 
 def send_telegram(text):
@@ -141,6 +142,36 @@ def get_krx_index(index_name, endpoint):
 
     raise ValueError(f"{index_name} 데이터를 최근 10일 내에서 찾을 수 없습니다.")
 
+def get_krx_derivative_indices(keywords=None, limit=10):
+    keywords = keywords or ["선물"]
+
+    for bas_dd in get_recent_dates(10):
+        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
+
+        if not rows:
+            continue
+
+        matched = []
+
+        for row in rows:
+            name = row.get("IDX_NM", "")
+
+            if any(keyword in name for keyword in keywords):
+                close = parse_num(row.get("CLSPRC_IDX"))
+                change = parse_num(row.get("CMPPREVDD_IDX"))
+                pct = parse_num(row.get("FLUC_RT"))
+
+                matched.append({
+                    "name": name,
+                    "close": close,
+                    "change": change,
+                    "pct": pct
+                })
+
+        if matched:
+            return matched[:limit]
+
+    return []
 
 def get_weather(lat, lon):
     url = (
@@ -201,14 +232,53 @@ def get_investor_flow(market):
         "외국인": row.get("외국인합계", row.get("외국인", 0)),
     }
 
+def get_krx_derivative_indices(keywords=None, limit=10):
+    keywords = keywords or ["선물"]
+
+    for bas_dd in get_recent_dates(10):
+        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
+
+        if not rows:
+            continue
+
+        matched = []
+
+        for row in rows:
+            name = row.get("IDX_NM", "")
+
+            if any(keyword in name for keyword in keywords):
+                close = parse_num(row.get("CLSPRC_IDX"))
+                change = parse_num(row.get("CMPPREVDD_IDX"))
+                pct = parse_num(row.get("FLUC_RT"))
+
+                matched.append({
+                    "name": name,
+                    "close": close,
+                    "change": change,
+                    "pct": pct
+                })
+
+        if matched:
+            return matched[:limit]
+
+    return []
 
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
 
-    today_str = get_today_string()
+    derivative_indices = get_krx_derivative_indices(
+        keywords=["선물", "코스피 200", "코스닥 150"],
+        limit=5
+    )
 
+    derivative_text = "\n".join([
+        f'{item["name"]}: {item["close"]:,.2f} ({direction_emoji(item["pct"])} {item["pct"]:+.2f}%)'
+        for item in derivative_indices
+    ]) or "데이터 없음"
+
+    today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
     hk_weather = get_weather(22.3193, 114.1694)
 
@@ -227,14 +297,17 @@ Good Morning Junsuk!
 NASDAQ 전일 종가: {nasdaq:,.2f} ({direction_emoji(nasdaq_pct)} {nasdaq_pct:+.2f}%)
 S&P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%)
 US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.0f}bps)
+
+<b>KRX 파생상품지수</b>
+{derivative_text}
 """.strip()
 
     send_telegram(msg)
 
 
 def afternoon_report():
-    kospi, kospi_pct = get_krx_index("코스피", KOSPI_ENDPOINT)
-    kosdaq, kosdaq_pct = get_krx_index("코스닥", KOSDAQ_ENDPOINT)
+    kospi, kospi_pct = get_yf_close_pct("^KS11")
+    kosdaq, kosdaq_pct = get_yf_close_pct("^KQ11")
 
     kospi_flow = get_investor_flow("KOSPI")
     kosdaq_flow = get_investor_flow("KOSDAQ")
@@ -243,7 +316,6 @@ def afternoon_report():
     hsi, hsi_pct = get_yf_close_pct("^HSI")
 
     today_str = get_today_string()
-
     seoul_weather = get_weather(37.5665, 126.9780)
     hk_weather = get_weather(22.3193, 114.1694)
 
