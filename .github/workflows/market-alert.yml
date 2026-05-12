@@ -40,7 +40,16 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
         run: python market_bot.py afternoon
 
-      - name: Manual test
+      - name: Manual morning test
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+        run: python market_bot.py morning
+
+      - name: Manual afternoon test
         if: github.event_name == 'workflow_dispatch'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
