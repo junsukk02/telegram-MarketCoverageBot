@@ -2,15 +2,19 @@ import os
 import sys
 import requests
 import yfinance as yf
-import calendar
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pykrx import stock
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+KRX_API_KEY = os.environ["KRX_API_KEY"]
 
 HK = ZoneInfo("Asia/Hong_Kong")
+
+
+KOSPI_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd"
+KOSDAQ_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kosdaq_dd_trd"
 
 
 def send_telegram(text):
@@ -27,6 +31,32 @@ def send_telegram(text):
 
 def direction_emoji(value):
     return "🟢" if value >= 0 else "🔴"
+
+
+def parse_num(value):
+    if value is None:
+        return 0.0
+
+    value = str(value).replace(",", "").replace("%", "").strip()
+
+    if value in ["", "-", "nan"]:
+        return 0.0
+
+    return float(value)
+
+
+def fmt_amount(value):
+    value = float(value)
+    abs_value = abs(value)
+
+    if abs_value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:+.2f}bn"
+    elif abs_value >= 1_000_000:
+        return f"{value / 1_000_000:+.2f}mn"
+    elif abs_value >= 1_000:
+        return f"{value / 1_000:+.2f}k"
+    else:
+        return f"{value:+.0f}"
 
 
 def get_yf_close_pct(ticker):
@@ -65,13 +95,53 @@ def get_us10y():
 
     return latest, bps_change
 
+
+def call_krx_api(endpoint, bas_dd):
+    headers = {
+        "AUTH_KEY": KRX_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "basDd": bas_dd
+    }
+
+    res = requests.post(
+        endpoint,
+        headers=headers,
+        json=payload,
+        timeout=20
+    )
+
+    res.raise_for_status()
+    return res.json().get("OutBlock_1", [])
+
+
+def get_krx_index(index_name, endpoint):
+    today = datetime.now(HK).strftime("%Y%m%d")
+
+    rows = call_krx_api(endpoint, today)
+
+    if not rows:
+        raise ValueError(f"{index_name} KRX API 데이터가 비어 있습니다.")
+
+    for row in rows:
+        if row.get("IDX_NM") == index_name:
+            close = parse_num(row.get("CLSPRC_IDX"))
+            pct = parse_num(row.get("FLUC_RT"))
+            return close, pct
+
+    available = [row.get("IDX_NM") for row in rows[:10]]
+    raise ValueError(f"{index_name} 데이터를 찾을 수 없습니다. Available sample: {available}")
+
+
 def get_weather(lat, lon):
     url = (
         f"https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}&longitude={lon}&current_weather=true"
     )
 
-    res = requests.get(url)
+    res = requests.get(url, timeout=10)
     data = res.json()
 
     weather_code = data["current_weather"]["weathercode"]
@@ -94,10 +164,36 @@ def get_weather(lat, lon):
 
     return weather_map.get(weather_code, "날씨 정보 없음")
 
+
 def get_today_string():
     now = datetime.now(HK)
-
     return now.strftime("%B %d, %Y (%A)")
+
+
+def get_investor_flow(market):
+    today = datetime.now(HK).strftime("%Y%m%d")
+
+    df = stock.get_market_trading_value_by_date(
+        today,
+        today,
+        market
+    )
+
+    if df.empty:
+        return {
+            "개인": 0,
+            "기관": 0,
+            "외국인": 0
+        }
+
+    row = df.iloc[-1]
+
+    return {
+        "개인": row.get("개인", 0),
+        "기관": row.get("기관합계", row.get("기관", 0)),
+        "외국인": row.get("외국인합계", row.get("외국인", 0)),
+    }
+
 
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
@@ -129,65 +225,9 @@ US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.0f}bps)
     send_telegram(msg)
 
 
-def get_kr_index(index_code):
-    today = datetime.now(HK).strftime("%Y%m%d")
-    start = (datetime.now(HK) - timedelta(days=14)).strftime("%Y%m%d")
-
-    df = stock.get_index_ohlcv_by_date(start, today, index_code)
-    df = df.dropna()
-
-    latest = float(df.iloc[-1]["종가"])
-    prev = float(df.iloc[-2]["종가"])
-    pct = (latest / prev - 1) * 100
-
-    return latest, pct
-
-
-def get_investor_flow(market):
-    today = datetime.now(HK).strftime("%Y%m%d")
-
-    df = stock.get_market_trading_value_by_date(
-        today,
-        today,
-        market
-    )
-
-    if df.empty:
-        return {
-            "개인": 0,
-            "기관": 0,
-            "외국인": 0
-        }
-
-    row = df.iloc[-1]
-
-    return {
-        "개인": row.get("개인", 0),
-        "기관": row.get("기관합계", row.get("기관", 0)),
-        "외국인": row.get("외국인합계", row.get("외국인", 0)),
-    }
-
-
-def fmt_amount(value):
-    value = float(value)
-
-    abs_value = abs(value)
-
-    if abs_value >= 1_000_000_000:
-        formatted = f"{value / 1_000_000_000:+.2f}bn"
-    elif abs_value >= 1_000_000:
-        formatted = f"{value / 1_000_000:+.2f}mn"
-    elif abs_value >= 1_000:
-        formatted = f"{value / 1_000:+.2f}k"
-    else:
-        formatted = f"{value:+.0f}"
-
-    return formatted
-
-
 def afternoon_report():
-    kospi, kospi_pct = get_kr_index("1001")
-    kosdaq, kosdaq_pct = get_kr_index("2001")
+    kospi, kospi_pct = get_krx_index("코스피", KOSPI_ENDPOINT)
+    kosdaq, kosdaq_pct = get_krx_index("코스닥", KOSDAQ_ENDPOINT)
 
     kospi_flow = get_investor_flow("KOSPI")
     kosdaq_flow = get_investor_flow("KOSDAQ")
@@ -231,11 +271,16 @@ HSI 종가: {hsi:,.2f} ({direction_emoji(hsi_pct)} {hsi_pct:+.2f}%)
 
 
 if __name__ == "__main__":
-    report_type = sys.argv[1]
+    try:
+        report_type = sys.argv[1]
 
-    if report_type == "morning":
-        morning_report()
-    elif report_type == "afternoon":
-        afternoon_report()
-    else:
-        raise ValueError("Use morning or afternoon")
+        if report_type == "morning":
+            morning_report()
+        elif report_type == "afternoon":
+            afternoon_report()
+        else:
+            raise ValueError("Use morning or afternoon")
+
+    except Exception as e:
+        send_telegram(f"❌ Market bot error:\n{str(e)}")
+        raise
