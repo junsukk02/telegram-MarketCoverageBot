@@ -16,7 +16,7 @@ on:
           - morning
           - afternoon
           - evening
-          - both
+          - all
 
 jobs:
   send-market-alert:
@@ -68,7 +68,7 @@ jobs:
         run: python market_bot.py evening
 
       - name: Manual morning test
-        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'morning' || github.event.inputs.report == 'both')
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'morning' || github.event.inputs.report == 'all')
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -76,7 +76,7 @@ jobs:
         run: python market_bot.py morning
 
       - name: Manual afternoon test
-        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'both')
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all')
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -84,7 +84,7 @@ jobs:
         run: python market_bot.py afternoon
 
       - name: Manual evening test
-        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'evening' || github.event.inputs.report == 'both')
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'evening' || github.event.inputs.report == 'all')
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
