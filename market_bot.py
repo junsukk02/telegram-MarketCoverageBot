@@ -101,7 +101,7 @@ def get_investor_flow(market):
     df = stock.get_market_trading_value_by_date(
         today,
         today,
-        market=market
+        market
     )
 
     if df.empty:
