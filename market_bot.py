@@ -2,6 +2,7 @@ import os
 import sys
 import requests
 import yfinance as yf
+import calendar
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pykrx import stock
@@ -64,14 +65,83 @@ def get_us10y():
 
     return latest, bps_change
 
+def get_weather(city_name, lat, lon):
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}&current_weather=true"
+    )
+
+    res = requests.get(url)
+    data = res.json()
+
+    weather_code = data["current_weather"]["weathercode"]
+
+    weather_map = {
+        0: "맑음 ☀️",
+        1: "대체로 맑음 🌤️",
+        2: "약간 흐림 ⛅",
+        3: "흐림 ☁️",
+        45: "안개 🌫️",
+        48: "안개 🌫️",
+        51: "이슬비 🌦️",
+        61: "비 🌧️",
+        63: "비 🌧️",
+        65: "강한 비 🌧️",
+        71: "눈 ❄️",
+        80: "소나기 🌦️",
+        95: "천둥번개 ⛈️",
+    }
+
+    weather = weather_map.get(weather_code, "날씨 정보 없음")
+
+    return f"{city_name}: {weather}"
+
+def get_today_string():
+    now = datetime.now(HK)
+
+    weekdays_kr = {
+        0: "월요일",
+        1: "화요일",
+        2: "수요일",
+        3: "목요일",
+        4: "금요일",
+        5: "토요일",
+        6: "일요일",
+    }
+
+    weekday = weekdays_kr[now.weekday()]
+
+    return f"{now.year}년 {now.month}월 {now.day}일 {weekday}"
 
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
 
+    today_str = get_today_string()
+
+    seoul_weather = get_weather(
+        "서울",
+        37.5665,
+        126.9780
+    )
+
+    hk_weather = get_weather(
+        "홍콩",
+        22.3193,
+        114.1694
+    )
+
     msg = f"""
-<b>Good Morning Junsuk! 오늘 하루도 열심히 합시다!</b>
+Good Morning Junsuk!
+
+<b>HERE IS YOUR ☀️MORNING REPORT☀️</b>
+
+<b><i>{today_str}
+서울: {seoul_weather}
+홍콩: {hk_weather}</i></b>
+
+<b><i>오늘 하루도 열심히 합시다!</i></b>
 
 NASDAQ 전일 종가: {nasdaq:,.2f} ({direction_emoji(nasdaq_pct)} {nasdaq_pct:+.2f}%)
 S&P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%)
@@ -135,21 +205,41 @@ def afternoon_report():
     nikkei, nikkei_pct = get_yf_close_pct("^N225")
     hsi, hsi_pct = get_yf_close_pct("^HSI")
 
+    today_str = get_today_string()
+
+    seoul_weather = get_weather(
+        "서울",
+        37.5665,
+        126.9780
+    )
+
+    hk_weather = get_weather(
+        "홍콩",
+        22.3193,
+        114.1694
+    )
+
     msg = f"""
-<b>아시아 장 마감-!!</b>
+Good Afternoon Junsuk!
+
+<b>HERE IS YOUR ☀️AFTERNOON REPORT☀️</b>
+
+<b><i>{today_str}
+서울: {seoul_weather}
+홍콩: {hk_weather}</i></b>
 
 KOSPI 종가: {kospi:,.2f} ({direction_emoji(kospi_pct)} {kospi_pct:+.2f}%)
 KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
 
 <b>KOSPI 순매수</b>
-개인: {fmt_amount(kospi_flow["개인"])}
-기관: {fmt_amount(kospi_flow["기관"])}
-외국인: {fmt_amount(kospi_flow["외국인"])}
+개인: {fmt_amount(kospi_flow['개인'])}
+기관: {fmt_amount(kospi_flow['기관'])}
+외국인: {fmt_amount(kospi_flow['외국인'])}
 
 <b>KOSDAQ 순매수</b>
-개인: {fmt_amount(kosdaq_flow["개인"])}
-기관: {fmt_amount(kosdaq_flow["기관"])}
-외국인: {fmt_amount(kosdaq_flow["외국인"])}
+개인: {fmt_amount(kosdaq_flow['개인'])}
+기관: {fmt_amount(kosdaq_flow['기관'])}
+외국인: {fmt_amount(kosdaq_flow['외국인'])}
 
 NIKKEI225 종가: {nikkei:,.2f} ({direction_emoji(nikkei_pct)} {nikkei_pct:+.2f}%)
 HSI 종가: {hsi:,.2f} ({direction_emoji(hsi_pct)} {hsi_pct:+.2f}%)
