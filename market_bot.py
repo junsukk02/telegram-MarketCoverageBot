@@ -3,6 +3,7 @@ import sys
 import requests
 import yfinance as yf
 import json
+import html
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pykrx import stock
@@ -25,8 +26,12 @@ def send_telegram(text):
     res = requests.post(url, json={
         "chat_id": CHAT_ID,
         "text": text,
-        "parse_mode": "HTML"
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     })
+
+    if not res.ok:
+        print("Telegram error:", res.status_code, res.text)
 
     res.raise_for_status()
 
@@ -101,8 +106,14 @@ def get_yf_close_pct(ticker):
 
     df = df.dropna()
 
-    latest = float(df["Close"].iloc[-1])
-    prev = float(df["Close"].iloc[-2])
+    close = df["Close"]
+
+    if hasattr(close, "columns"):
+        close = close.iloc[:, 0]
+
+    latest = float(close.iloc[-1])
+    prev = float(close.iloc[-2])
+
     pct = (latest / prev - 1) * 100
 
     return latest, pct
@@ -119,8 +130,13 @@ def get_us10y():
 
     df = df.dropna()
 
-    latest = float(df["Close"].iloc[-1]) / 10
-    prev = float(df["Close"].iloc[-2]) / 10
+    close = df["Close"]
+
+    if hasattr(close, "columns"):
+        close = close.iloc[:, 0]
+
+    latest = float(close.iloc[-1]) / 10
+    prev = float(close.iloc[-2]) / 10
 
     bps_change = (latest - prev) * 100
 
@@ -305,7 +321,7 @@ def morning_report():
     derivative_indices = get_krx_derivative_indices()
 
     derivative_text = "\n".join([
-        f'{item["name"]}: {item["close"]:,.2f} ({direction_emoji(item["pct"])} {item["pct"]:+.2f}%)'
+        f'{html.escape(item["name"])}: {item["close"]:,.2f} ({direction_emoji(item["pct"])} {item["pct"]:+.2f}%)'
         for item in derivative_indices
     ]) or "데이터 없음"
 
