@@ -1,0 +1,45 @@
+name: Telegram Market Manual Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      report:
+        description: 'Which report?'
+        required: true
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - afternoon
+          - evening
+          - all
+
+jobs:
+  manual-test:
+    runs-on: ubuntu-latest
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Morning
+        if: github.event.inputs.report == 'morning' || github.event.inputs.report == 'all'
+        run: python market_bot.py morning
+
+      - name: Afternoon
+        if: github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all'
+        run: python market_bot.py afternoon
+
+      - name: Evening
+        if: github.event.inputs.report == 'evening' || github.event.inputs.report == 'all'
+        run: python market_bot.py evening
