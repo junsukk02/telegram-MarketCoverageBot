@@ -55,11 +55,15 @@ jobs:
       - name: Commit flow snapshot
         if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all'))
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add flow_snapshot.json
-          git commit -m "Update flow snapshot" || echo "No changes to commit"
-          git push
+          if [ -f flow_snapshot.json ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add flow_snapshot.json
+            git commit -m "Update flow snapshot" || echo "No changes to commit"
+            git push
+          else
+            echo "flow_snapshot.json not found"
+          fi
 
       - name: Send evening report
         if: github.event.schedule == '0 12 * * 1-5' || github.event.schedule == '40 11 * * 1-5'
