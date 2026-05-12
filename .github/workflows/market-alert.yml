@@ -5,6 +5,7 @@ name: Telegram Market Alert
     - cron: "0 23 * * 0-4"
     - cron: "35 6 * * 1-5"
     - cron: "0 12 * * 1-5"
+    - cron: "0 12 * * 1-5"
   workflow_dispatch:
     inputs:
       report:
@@ -60,7 +61,7 @@ jobs:
           git push
 
       - name: Send evening report
-        if: github.event.schedule == '0 12 * * 1-5'
+        if: github.event.schedule == '0 12 * * 1-5' || github.event.schedule == '30 11 * * 1-5'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
