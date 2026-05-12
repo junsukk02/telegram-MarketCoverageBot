@@ -48,7 +48,7 @@ jobs:
         run: python market_bot.py afternoon
 
       - name: Scheduled evening report test
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *'
         run: python market_bot.py evening
 
       - name: Scheduled evening report
