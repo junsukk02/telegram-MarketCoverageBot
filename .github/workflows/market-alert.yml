@@ -14,10 +14,7 @@ on:
           - evening
           - all
   schedule:
-    - cron: '0 23 * * 0-4'
-    - cron: '35 6 * * 1-5'
     - cron: '*/5 * * * *'
-    - cron: '0 12 * * 1-5'
 
 jobs:
   send-market-alert:
