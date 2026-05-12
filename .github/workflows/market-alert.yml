@@ -4,8 +4,19 @@ on:
   schedule:
     - cron: "0 23 * * 0-4"
     - cron: "35 6 * * 1-5"
-  workflow_dispatch:
-
+    - cron: "0 12 * * 1-5"
+workflow_dispatch:
+  inputs:
+    report:
+      description: "Which report to test?"
+      required: true
+      default: "morning"
+      type: choice
+      options:
+        - morning
+        - afternoon
+        - evening
+        - both
 jobs:
   send-market-alert:
     runs-on: ubuntu-latest
@@ -41,6 +52,15 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py afternoon
+        
+      - name: Commit flow snapshot
+        if: github.event.schedule == '35 6 * * 1-5'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add flow_snapshot.json
+          git commit -m "Update flow snapshot" || echo "No changes to commit"
+          git push
 
       - name: Manual morning test
         if: github.event_name == 'workflow_dispatch'
@@ -61,3 +81,11 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py afternoon
+
+      - name: Manual evening test
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'evening' || github.event.inputs.report == 'both')
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+        run: python market_bot.py evening
