@@ -2,10 +2,11 @@ name: Telegram Market Alert
 
 "on":
   schedule:
-    - cron: "0 23 * * 0-4"
-    - cron: "35 6 * * 1-5"
-    - cron: "0 12 * * 1-5"
-    - cron: "0 12 * * 1-5"
+    - cron: "0 23 * * 0-4"   # Hong Kong 07:00 Morning
+    - cron: "35 6 * * 1-5"   # Hong Kong 14:35 Afternoon
+    - cron: "30 11 * * 1-5"  # Hong Kong 19:30 Evening test
+    - cron: "0 12 * * 1-5"   # Hong Kong 20:00 Evening
+    
   workflow_dispatch:
     inputs:
       report:
@@ -52,7 +53,7 @@ jobs:
         run: python market_bot.py afternoon
 
       - name: Commit flow snapshot
-        if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'both'))
+        if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all'))
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
