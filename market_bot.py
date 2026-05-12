@@ -142,8 +142,11 @@ def get_krx_index(index_name, endpoint):
 
     raise ValueError(f"{index_name} 데이터를 최근 10일 내에서 찾을 수 없습니다.")
 
-def get_krx_derivative_indices(keywords=None, limit=10):
-    keywords = keywords or ["선물"]
+def get_krx_derivative_indices():
+    target_names = [
+        "코스피 200 선물지수",
+        "코스닥 150 선물지수",
+    ]
 
     for bas_dd in get_recent_dates(10):
         rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
@@ -153,54 +156,57 @@ def get_krx_derivative_indices(keywords=None, limit=10):
 
         matched = []
 
-        for row in rows:
-            name = row.get("IDX_NM", "")
+        for target in target_names:
+            for row in rows:
+                name = row.get("IDX_NM", "")
 
-            if any(keyword in name for keyword in keywords):
-                close = parse_num(row.get("CLSPRC_IDX"))
-                change = parse_num(row.get("CMPPREVDD_IDX"))
-                pct = parse_num(row.get("FLUC_RT"))
-
-                matched.append({
-                    "name": name,
-                    "close": close,
-                    "change": change,
-                    "pct": pct
-                })
+                if name == target:
+                    matched.append({
+                        "name": name,
+                        "close": parse_num(row.get("CLSPRC_IDX")),
+                        "change": parse_num(row.get("CMPPREVDD_IDX")),
+                        "pct": parse_num(row.get("FLUC_RT")),
+                    })
 
         if matched:
-            return matched[:limit]
+            return matched
 
     return []
 
+
 def get_weather(lat, lon):
-    url = (
-        f"https://api.open-meteo.com/v1/forecast"
-        f"?latitude={lat}&longitude={lon}&current_weather=true"
-    )
+    try:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lon}&current_weather=true"
+        )
 
-    res = requests.get(url, timeout=10)
-    data = res.json()
+        res = requests.get(url, timeout=3)
+        res.raise_for_status()
+        data = res.json()
 
-    weather_code = data["current_weather"]["weathercode"]
+        weather_code = data["current_weather"]["weathercode"]
 
-    weather_map = {
-        0: "맑음 ☀️",
-        1: "대체로 맑음 🌤️",
-        2: "약간 흐림 ⛅",
-        3: "흐림 ☁️",
-        45: "안개 🌫️",
-        48: "안개 🌫️",
-        51: "이슬비 🌦️",
-        61: "비 🌧️",
-        63: "비 🌧️",
-        65: "강한 비 🌧️",
-        71: "눈 ❄️",
-        80: "소나기 🌦️",
-        95: "천둥번개 ⛈️",
-    }
+        weather_map = {
+            0: "맑음 ☀️",
+            1: "대체로 맑음 🌤️",
+            2: "약간 흐림 ⛅",
+            3: "흐림 ☁️",
+            45: "안개 🌫️",
+            48: "안개 🌫️",
+            51: "이슬비 🌦️",
+            61: "비 🌧️",
+            63: "비 🌧️",
+            65: "강한 비 🌧️",
+            71: "눈 ❄️",
+            80: "소나기 🌦️",
+            95: "천둥번개 ⛈️",
+        }
 
-    return weather_map.get(weather_code, "날씨 정보 없음")
+        return weather_map.get(weather_code, "날씨 정보 없음")
+
+    except Exception:
+        return "날씨 정보 없음"
 
 
 def get_today_string():
@@ -268,10 +274,7 @@ def morning_report():
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
 
-    derivative_indices = get_krx_derivative_indices(
-        keywords=["선물", "코스피 200", "코스닥 150"],
-        limit=5
-    )
+    derivative_indices = get_krx_derivative_indices()
 
     derivative_text = "\n".join([
         f'{item["name"]}: {item["close"]:,.2f} ({direction_emoji(item["pct"])} {item["pct"]:+.2f}%)'
