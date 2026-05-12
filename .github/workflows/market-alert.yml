@@ -5,18 +5,19 @@ on:
     - cron: "0 23 * * 0-4"
     - cron: "35 6 * * 1-5"
     - cron: "0 12 * * 1-5"
-workflow_dispatch:
-  inputs:
-    report:
-      description: "Which report to test?"
-      required: true
-      default: "morning"
-      type: choice
-      options:
-        - morning
-        - afternoon
-        - evening
-        - both
+  workflow_dispatch:
+    inputs:
+      report:
+        description: "Which report to test?"
+        required: true
+        default: "morning"
+        type: choice
+        options:
+          - morning
+          - afternoon
+          - evening
+          - both
+
 jobs:
   send-market-alert:
     runs-on: ubuntu-latest
@@ -38,8 +39,6 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_ID: ${{ secrets.KRX_ID }}
-          KRX_PW: ${{ secrets.KRX_PW }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py morning
 
@@ -48,13 +47,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_ID: ${{ secrets.KRX_ID }}
-          KRX_PW: ${{ secrets.KRX_PW }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py afternoon
-        
+
       - name: Commit flow snapshot
-        if: github.event.schedule == '35 6 * * 1-5'
+        if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'both'))
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
@@ -62,23 +59,27 @@ jobs:
           git commit -m "Update flow snapshot" || echo "No changes to commit"
           git push
 
-      - name: Manual morning test
-        if: github.event_name == 'workflow_dispatch'
+      - name: Send evening report
+        if: github.event.schedule == '0 12 * * 1-5'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_ID: ${{ secrets.KRX_ID }}
-          KRX_PW: ${{ secrets.KRX_PW }}
+          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+        run: python market_bot.py evening
+
+      - name: Manual morning test
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'morning' || github.event.inputs.report == 'both')
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py morning
 
       - name: Manual afternoon test
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'both')
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_ID: ${{ secrets.KRX_ID }}
-          KRX_PW: ${{ secrets.KRX_PW }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py afternoon
 
