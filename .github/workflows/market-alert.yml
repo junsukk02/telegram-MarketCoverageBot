@@ -16,7 +16,7 @@ on:
   schedule:
     - cron: '0 23 * * 0-4'
     - cron: '35 6 * * 1-5'
-    - cron: '20 12 * * 1-5'
+    - cron: '*/5 * * * *'
     - cron: '0 12 * * 1-5'
 
 jobs:
@@ -51,7 +51,7 @@ jobs:
         run: python market_bot.py afternoon
 
       - name: Scheduled evening report test
-        if: github.event_name == 'schedule' && github.event.schedule == '20 12 * * 1-5'
+        if: github.event_name == 'schedule'
         run: python market_bot.py evening
 
       - name: Scheduled evening report
