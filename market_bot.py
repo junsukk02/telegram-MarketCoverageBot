@@ -2,6 +2,7 @@ import os
 import sys
 import requests
 import yfinance as yf
+import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pykrx import stock
@@ -48,17 +49,46 @@ def parse_num(value):
 
 def fmt_amount(value):
     value = float(value)
+
+    emoji = "🟢" if value >= 0 else "🔴"
+
     abs_value = abs(value)
 
-    if abs_value >= 1_000_000_000:
-        return f"{value / 1_000_000_000:+.2f}bn"
+    if abs_value >= 1_000_000_000_000:
+        formatted = f"₩{abs_value / 1_000_000_000_000:,.1f}trn"
+    elif abs_value >= 1_000_000_000:
+        formatted = f"₩{abs_value / 1_000_000_000:,.1f}bn"
     elif abs_value >= 1_000_000:
-        return f"{value / 1_000_000:+.2f}mn"
+        formatted = f"₩{abs_value / 1_000_000:,.1f}mn"
     elif abs_value >= 1_000:
-        return f"{value / 1_000:+.2f}k"
+        formatted = f"₩{abs_value / 1_000:,.1f}k"
     else:
-        return f"{value:+.0f}"
+        formatted = f"₩{abs_value:,.0f}"
 
+    sign = "+" if value >= 0 else "-"
+
+    return f"{emoji} {sign}{formatted}"
+
+SNAPSHOT_FILE = "flow_snapshot.json"
+
+
+def save_flow_snapshot(kospi_flow, kosdaq_flow):
+    snapshot = {
+        "date": datetime.now(HK).strftime("%Y%m%d"),
+        "kospi_flow": kospi_flow,
+        "kosdaq_flow": kosdaq_flow,
+    }
+
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+
+
+def load_flow_snapshot():
+    if not os.path.exists(SNAPSHOT_FILE):
+        return None
+
+    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def get_yf_close_pct(ticker):
     df = yf.download(
@@ -238,36 +268,34 @@ def get_investor_flow(market):
         "외국인": row.get("외국인합계", row.get("외국인", 0)),
     }
 
-def get_krx_derivative_indices(keywords=None, limit=10):
-    keywords = keywords or ["선물"]
 
+def get_krx_derivative_indices():
     for bas_dd in get_recent_dates(10):
         rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
 
         if not rows:
             continue
 
-        matched = []
+        indices = []
 
         for row in rows:
             name = row.get("IDX_NM", "")
 
-            if any(keyword in name for keyword in keywords):
-                close = parse_num(row.get("CLSPRC_IDX"))
-                change = parse_num(row.get("CMPPREVDD_IDX"))
-                pct = parse_num(row.get("FLUC_RT"))
+            if not name:
+                continue
 
-                matched.append({
-                    "name": name,
-                    "close": close,
-                    "change": change,
-                    "pct": pct
-                })
+            indices.append({
+                "name": name,
+                "close": parse_num(row.get("CLSPRC_IDX")),
+                "change": parse_num(row.get("CMPPREVDD_IDX")),
+                "pct": parse_num(row.get("FLUC_RT")),
+            })
 
-        if matched:
-            return matched[:limit]
+        if indices:
+            return indices
 
     return []
+
 
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
@@ -314,6 +342,8 @@ def afternoon_report():
 
     kospi_flow = get_investor_flow("KOSPI")
     kosdaq_flow = get_investor_flow("KOSDAQ")
+    
+    save_flow_snapshot(kospi_flow, kosdaq_flow)
 
     nikkei, nikkei_pct = get_yf_close_pct("^N225")
     hsi, hsi_pct = get_yf_close_pct("^HSI")
@@ -351,17 +381,79 @@ HSI 종가: {hsi:,.2f} ({direction_emoji(hsi_pct)} {hsi_pct:+.2f}%)
 
     send_telegram(msg)
 
+def evening_report():
+    kospi, kospi_pct = get_yf_close_pct("^KS11")
+    kosdaq, kosdaq_pct = get_yf_close_pct("^KQ11")
+
+    final_kospi_flow = get_investor_flow("KOSPI")
+    final_kosdaq_flow = get_investor_flow("KOSDAQ")
+
+    snapshot = load_flow_snapshot()
+
+    today_str = get_today_string()
+    seoul_weather = get_weather(37.5665, 126.9780)
+    hk_weather = get_weather(22.3193, 114.1694)
+
+    if snapshot is None:
+        change_text = "비교용 afternoon snapshot 데이터 없음"
+    else:
+        prev_kospi = snapshot["kospi_flow"]
+        prev_kosdaq = snapshot["kosdaq_flow"]
+
+        change_text = f"""
+<b>수급 변화 vs Afternoon Report</b>
+
+KOSPI 개인: {fmt_amount(final_kospi_flow["개인"] - prev_kospi["개인"])}
+KOSPI 기관: {fmt_amount(final_kospi_flow["기관"] - prev_kospi["기관"])}
+KOSPI 외국인: {fmt_amount(final_kospi_flow["외국인"] - prev_kospi["외국인"])}
+
+KOSDAQ 개인: {fmt_amount(final_kosdaq_flow["개인"] - prev_kosdaq["개인"])}
+KOSDAQ 기관: {fmt_amount(final_kosdaq_flow["기관"] - prev_kosdaq["기관"])}
+KOSDAQ 외국인: {fmt_amount(final_kosdaq_flow["외국인"] - prev_kosdaq["외국인"])}
+""".strip()
+
+    msg = f"""
+Good Evening Junsuk!
+
+<b>HERE IS YOUR 🌙EVENING FLOW UPDATE🌙</b>
+
+<b><i>{today_str}</i></b>
+
+<b><i>서울: {seoul_weather}</i></b>
+<b><i>홍콩: {hk_weather}</i></b>
+
+<b><i>KRX 마감 이후 조정된 최종 수급 데이터입니다.</i></b>
+
+KOSPI 종가: {kospi:,.2f} ({direction_emoji(kospi_pct)} {kospi_pct:+.2f}%)
+KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
+
+<b>KOSPI 최종 순매수</b>
+개인: {fmt_amount(final_kospi_flow["개인"])}
+기관: {fmt_amount(final_kospi_flow["기관"])}
+외국인: {fmt_amount(final_kospi_flow["외국인"])}
+
+<b>KOSDAQ 최종 순매수</b>
+개인: {fmt_amount(final_kosdaq_flow["개인"])}
+기관: {fmt_amount(final_kosdaq_flow["기관"])}
+외국인: {fmt_amount(final_kosdaq_flow["외국인"])}
+
+{change_text}
+""".strip()
+
+    send_telegram(msg)
 
 if __name__ == "__main__":
     try:
         report_type = sys.argv[1]
 
-        if report_type == "morning":
-            morning_report()
-        elif report_type == "afternoon":
-            afternoon_report()
-        else:
-            raise ValueError("Use morning or afternoon")
+    if report_type == "morning":
+        morning_report()
+    elif report_type == "afternoon":
+        afternoon_report()
+    elif report_type == "evening":
+        evening_report()
+    else:
+        raise ValueError("Use morning, afternoon, or evening")
 
     except Exception as e:
         send_telegram(f"❌ Market bot error:\n{str(e)}")
