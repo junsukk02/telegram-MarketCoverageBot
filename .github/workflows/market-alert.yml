@@ -1,12 +1,6 @@
 name: Telegram Market Alert
 
 on:
-  schedule:
-    - cron: '0 23 * * 0-4'
-    - cron: '35 6 * * 1-5'
-    - cron: '40 11 * * 1-5'
-    - cron: '0 12 * * 1-5'
-
   workflow_dispatch:
     inputs:
       report:
@@ -20,13 +14,26 @@ on:
           - evening
           - all
 
+  schedule:
+    - cron: '0 23 * * 0-4'
+    - cron: '35 6 * * 1-5'
+    - cron: '10 12 * * 1-5'
+    - cron: '0 12 * * 1-5'
+
 jobs:
   send-market-alert:
     runs-on: ubuntu-latest
 
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,63 +43,39 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Send morning report
-        if: github.event.schedule == '0 23 * * 0-4'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+      - name: Scheduled morning report
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * 0-4'
         run: python market_bot.py morning
 
-      - name: Send afternoon report
-        if: github.event.schedule == '35 6 * * 1-5'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+      - name: Scheduled afternoon report
+        if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * 1-5'
         run: python market_bot.py afternoon
 
-      - name: Commit flow snapshot
-        if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all'))
-        run: |
-          if [ -f flow_snapshot.json ]; then
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add flow_snapshot.json
-            git commit -m "Update flow snapshot" || echo "No changes to commit"
-            git push
-          else
-            echo "flow_snapshot.json not found"
-          fi
+      - name: Scheduled evening report test
+        if: github.event_name == 'schedule' && github.event.schedule == '10 12 * * 1-5'
+        run: python market_bot.py evening
 
-      - name: Send evening report
-        if: github.event.schedule == '0 12 * * 1-5' || github.event.schedule == '40 11 * * 1-5'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+      - name: Scheduled evening report
+        if: github.event_name == 'schedule' && github.event.schedule == '0 12 * * 1-5'
         run: python market_bot.py evening
 
       - name: Manual morning test
         if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'morning' || github.event.inputs.report == 'all')
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py morning
 
       - name: Manual afternoon test
         if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all')
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py afternoon
 
       - name: Manual evening test
         if: github.event_name == 'workflow_dispatch' && (github.event.inputs.report == 'evening' || github.event.inputs.report == 'all')
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
         run: python market_bot.py evening
+
+      - name: Commit flow snapshot
+        if: always() && hashFiles('flow_snapshot.json') != ''
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add flow_snapshot.json
+          git commit -m "Update flow snapshot" || echo "No changes to commit"
+          git push
