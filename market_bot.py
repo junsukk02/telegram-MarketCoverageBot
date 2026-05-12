@@ -445,16 +445,29 @@ KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
 if __name__ == "__main__":
     try:
         report_type = sys.argv[1]
+        
+        if report_type == "morning":
+            morning_report()
+            
+        elif report_type == "afternoon":
+            afternoon_report()
+            
+        elif report_type == "evening":
+            evening_report()
 
-    if report_type == "morning":
-        morning_report()
-    elif report_type == "afternoon":
-        afternoon_report()
-    elif report_type == "evening":
-        evening_report()
-    else:
-        raise ValueError("Use morning, afternoon, or evening")
+        else:
+            raise ValueError(
+                "Use morning, afternoon, or evening"
+            )
 
     except Exception as e:
-        send_telegram(f"❌ Market bot error:\n{str(e)}")
+        error_msg = f"❌ Market bot error:\n{str(e)}"
+
+        print(error_msg)
+
+        try:
+            send_telegram(error_msg)
+        except:
+            pass
+
         raise
