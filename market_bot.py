@@ -116,23 +116,30 @@ def call_krx_api(endpoint, bas_dd):
     res.raise_for_status()
     return res.json().get("OutBlock_1", [])
 
+def get_recent_dates(days=10):
+    today = datetime.now(HK)
+
+    dates = []
+    for i in range(days):
+        d = today - timedelta(days=i)
+        dates.append(d.strftime("%Y%m%d"))
+
+    return dates
 
 def get_krx_index(index_name, endpoint):
-    today = datetime.now(HK).strftime("%Y%m%d")
+    for bas_dd in get_recent_dates(10):
+        rows = call_krx_api(endpoint, bas_dd)
 
-    rows = call_krx_api(endpoint, today)
+        if not rows:
+            continue
 
-    if not rows:
-        raise ValueError(f"{index_name} KRX API 데이터가 비어 있습니다.")
+        for row in rows:
+            if row.get("IDX_NM") == index_name:
+                close = parse_num(row.get("CLSPRC_IDX"))
+                pct = parse_num(row.get("FLUC_RT"))
+                return close, pct
 
-    for row in rows:
-        if row.get("IDX_NM") == index_name:
-            close = parse_num(row.get("CLSPRC_IDX"))
-            pct = parse_num(row.get("FLUC_RT"))
-            return close, pct
-
-    available = [row.get("IDX_NM") for row in rows[:10]]
-    raise ValueError(f"{index_name} 데이터를 찾을 수 없습니다. Available sample: {available}")
+    raise ValueError(f"{index_name} 데이터를 최근 10일 내에서 찾을 수 없습니다.")
 
 
 def get_weather(lat, lon):
