@@ -1,0 +1,37 @@
+name: Telegram Market Schedule
+
+on:
+  schedule:
+    - cron: '0 23 * * 0-4'
+    - cron: '35 6 * * 1-5'
+    - cron: '0 12 * * 1-5'
+
+jobs:
+  send-market-alert:
+    runs-on: ubuntu-latest
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Morning
+        if: github.event.schedule == '0 23 * * 0-4'
+        run: python market_bot.py morning
+
+      - name: Afternoon
+        if: github.event.schedule == '35 6 * * 1-5'
+        run: python market_bot.py afternoon
+
+      - name: Evening
+        if: github.event.schedule == '0 12 * * 1-5'
+        run: python market_bot.py evening
