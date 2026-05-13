@@ -18,6 +18,9 @@ jobs:
   manual-test:
     runs-on: ubuntu-latest
 
+permissions:
+  contents: write
+
   env:
     TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
     TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -41,6 +44,15 @@ jobs:
       - name: Afternoon
         if: github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all'
         run: python market_bot.py afternoon
+
+      - name: Commit flow snapshot
+        if: github.event.inputs.report == 'afternoon' || github.event.inputs.report == 'all'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add flow_snapshot.json
+          git commit -m "Update flow snapshot" || echo "No changes to commit"
+          git push
 
       - name: Evening
         if: github.event.inputs.report == 'evening' || github.event.inputs.report == 'all'
