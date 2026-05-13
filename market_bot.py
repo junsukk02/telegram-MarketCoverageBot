@@ -278,6 +278,9 @@ def get_weather(lat, lon):
     except Exception:
         return "날씨 정보 없음"
 
+def get_today_string():
+    now = datetime.now(HK)
+    return now.strftime("%B %d, %Y (%A)")
 
 def get_investor_flow(market):
     today = datetime.now(HK).strftime("%Y%m%d")
