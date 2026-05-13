@@ -267,7 +267,11 @@ def get_esignal_kospi200_night_future():
         session = requests.Session()
 
         headers = {
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Origin": "https://esignal.co.kr",
+            "Referer": "https://esignal.co.kr/kospi200-futures-night/",
         }
 
         # Step 1: socket.io handshake
