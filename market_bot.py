@@ -90,7 +90,6 @@ def save_flow_snapshot(kospi_flow, kosdaq_flow):
     with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
-
 def load_flow_snapshot():
     if not os.path.exists(SNAPSHOT_FILE):
         return None
@@ -287,10 +286,6 @@ def get_weather(lat, lon):
         return "날씨 정보 없음"
 
 
-def get_today_string():
-    now = datetime.now(HK)
-    return now.strftime("%B %d, %Y (%A)")
-
 def get_investor_flow(market):
     today = datetime.now(HK).strftime("%Y%m%d")
 
@@ -314,7 +309,7 @@ def get_investor_flow(market):
         "기관": float(row.get("기관합계", row.get("기관", 0))),
         "외국인": float(row.get("외국인합계", row.get("외국인", 0))),
     }
-
+    
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
