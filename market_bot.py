@@ -5,6 +5,7 @@ import time
 import yfinance as yf
 import json
 import html
+from playwright.sync_api import sync_playwright
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pykrx import stock
@@ -264,73 +265,39 @@ def format_derivative_indices(indices):
 
 def get_esignal_kospi200_night_future():
     try:
-        session = requests.Session()
+        url = "https://esignal.co.kr/kospi200-futures-night/"
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "*/*",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Origin": "https://esignal.co.kr",
-            "Referer": "https://esignal.co.kr/kospi200-futures-night/",
-        }
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
 
-        # Step 1: socket.io handshake
-        handshake_url = (
-            "https://esignal.co.kr/proxy/8888/socket.io/"
-            "?EIO=4&transport=polling"
-        )
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            page.wait_for_timeout(5000)
 
-        r1 = session.get(handshake_url, headers=headers, timeout=10)
-        r1.raise_for_status()
+            price = page.locator("#dprice").inner_text(timeout=5000)
+            open_price = page.locator(".opend").inner_text(timeout=5000)
+            high_price = page.locator(".highd").inner_text(timeout=5000)
+            low_price = page.locator(".lowd").inner_text(timeout=5000)
+            prev_close = page.locator(".close1").inner_text(timeout=5000)
+            volume = page.locator(".vold").inner_text(timeout=5000)
+            updated_at = page.locator(".ttime").inner_text(timeout=5000)
 
-        text = r1.text
-
-        import re
-
-        sid_match = re.search(r'"sid":"([^"]+)"', text)
-
-        if not sid_match:
-            return None
-
-        sid = sid_match.group(1)
-
-        # Step 2: polling data request
-        poll_url = (
-            "https://esignal.co.kr/proxy/8888/socket.io/"
-            f"?EIO=4&transport=polling&sid={sid}"
-        )
-
-        r2 = session.get(poll_url, headers=headers, timeout=10)
-        r2.raise_for_status()
-
-        data_text = r2.text
-
-        json_match = re.search(r'42\["populate","(.+?)"\]', data_text)
-
-        if not json_match:
-            return None
-
-        raw_json = json_match.group(1)
-
-        # socket escape 처리
-        raw_json = raw_json.encode().decode("unicode_escape")
-
-        import json
-
-        data = json.loads(raw_json)
+            browser.close()
 
         return {
-            "price": data.get("value", "0"),
-            "diff": data.get("value_diff", "0"),
-            "prev_close": data.get("value_day", "0"),
-            "open": data.get("open", "0"),
-            "high": data.get("high", "0"),
-            "low": data.get("low", "0"),
-            "volume": data.get("volume", 0),
+            "price": price,
+            "open": open_price,
+            "high": high_price,
+            "low": low_price,
+            "prev_close": prev_close,
+            "volume": volume,
+            "updated_at": updated_at,
         }
 
     except Exception as e:
-        print(f"eSignal socket error: {e}")
+        print(f"eSignal KOSPI200 night future error: {e}")
         return None
         
 def format_esignal_kospi200_night_future(data):
