@@ -82,6 +82,7 @@ SNAPSHOT_FILE = "flow_snapshot.json"
 def save_flow_snapshot(kospi_flow, kosdaq_flow):
     snapshot = {
         "date": datetime.now(HK).strftime("%Y%m%d"),
+        "saved_at": datetime.now(HK).strftime("%Y-%m-%d %H:%M:%S"),
         "kospi_flow": kospi_flow,
         "kosdaq_flow": kosdaq_flow,
     }
@@ -290,7 +291,6 @@ def get_today_string():
     now = datetime.now(HK)
     return now.strftime("%B %d, %Y (%A)")
 
-
 def get_investor_flow(market):
     today = datetime.now(HK).strftime("%Y%m%d")
 
@@ -302,19 +302,18 @@ def get_investor_flow(market):
 
     if df.empty:
         return {
-            "개인": 0,
-            "기관": 0,
-            "외국인": 0
+            "개인": 0.0,
+            "기관": 0.0,
+            "외국인": 0.0
         }
 
     row = df.iloc[-1]
 
     return {
-        "개인": row.get("개인", 0),
-        "기관": row.get("기관합계", row.get("기관", 0)),
-        "외국인": row.get("외국인합계", row.get("외국인", 0)),
+        "개인": float(row.get("개인", 0)),
+        "기관": float(row.get("기관합계", row.get("기관", 0))),
+        "외국인": float(row.get("외국인합계", row.get("외국인", 0))),
     }
-
 
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
@@ -448,14 +447,18 @@ def evening_report():
     seoul_weather = get_weather(37.5665, 126.9780)
     hk_weather = get_weather(22.3193, 114.1694)
 
+    today_key = datetime.now(HK).strftime("%Y%m%d")
+
     if snapshot is None:
-        change_text = "비교용 afternoon snapshot 데이터 없음"
+        change_text = "비교용 Afternoon snapshot 데이터 없음"
+    elif snapshot.get("date") != today_key:
+        change_text = "비교용 Afternoon snapshot이 오늘 데이터가 아님"
     else:
         prev_kospi = snapshot["kospi_flow"]
         prev_kosdaq = snapshot["kosdaq_flow"]
 
         change_text = f"""
-<b>수급 변화 vs Afternoon Report</b>
+<b>수급 괴리 vs Afternoon Report</b>
 
 KOSPI 개인: {fmt_amount(final_kospi_flow["개인"] - prev_kospi["개인"])}
 KOSPI 기관: {fmt_amount(final_kospi_flow["기관"] - prev_kospi["기관"])}
