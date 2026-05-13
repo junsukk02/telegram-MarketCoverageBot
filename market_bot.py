@@ -267,33 +267,66 @@ def get_esignal_kospi200_night_future():
     try:
         url = "https://esignal.co.kr/kospi200-futures-night/"
 
+        captured = {}
+
+        def handle_response(response):
+            try:
+                if "socket.io" not in response.url:
+                    return
+
+                body = response.text()
+
+                if '42["populate"' not in body:
+                    return
+
+                import re
+
+                match = re.search(r'42\["populate","(.+?)"\]', body)
+
+                if not match:
+                    return
+
+                raw_json = match.group(1)
+                raw_json = raw_json.encode().decode("unicode_escape")
+
+                data = json.loads(raw_json)
+
+                captured["data"] = data
+
+            except Exception:
+                pass
+
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
 
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            page.wait_for_timeout(5000)
+            page.on("response", handle_response)
 
-            price = page.locator("#dprice").inner_text(timeout=5000)
-            open_price = page.locator(".opend").inner_text(timeout=5000)
-            high_price = page.locator(".highd").inner_text(timeout=5000)
-            low_price = page.locator(".lowd").inner_text(timeout=5000)
-            prev_close = page.locator(".close1").inner_text(timeout=5000)
-            volume = page.locator(".vold").inner_text(timeout=5000)
-            updated_at = page.locator(".ttime").inner_text(timeout=5000)
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+            for _ in range(10):
+                if "data" in captured:
+                    break
+                page.wait_for_timeout(1000)
 
             browser.close()
 
+        if "data" not in captured:
+            return None
+
+        data = captured["data"]
+
         return {
-            "price": price,
-            "open": open_price,
-            "high": high_price,
-            "low": low_price,
-            "prev_close": prev_close,
-            "volume": volume,
-            "updated_at": updated_at,
+            "price": data.get("value", "0"),
+            "diff": data.get("value_diff", "0"),
+            "prev_close": data.get("value_day", "0"),
+            "open": data.get("open", "0"),
+            "high": data.get("high", "0"),
+            "low": data.get("low", "0"),
+            "volume": data.get("volume", 0),
+            "updated_at": data.get("tstamp", ""),
         }
 
     except Exception as e:
@@ -313,7 +346,7 @@ def format_esignal_kospi200_night_future(data):
     return (
         f'{price:,.2f} '
         f'({direction_emoji(diff)} {pct:+.2f}%)\n'
-        f'고가 {data["high"]} / 저가 {data["low"]} / 거래량 {data["volume"]:,}'
+        f'고가 {data["high"]} / 저가 {data["low"]} / 거래량 {int(data["volume"]):,}'
     )
     
 def get_weather(lat, lon):
