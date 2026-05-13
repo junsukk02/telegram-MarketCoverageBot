@@ -18,10 +18,12 @@ jobs:
   manual-test:
     runs-on: ubuntu-latest
 
-    env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+  env:
+    TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+    KRX_ID: ${{ secrets.KRX_ID }}
+    KRX_PW: ${{ secrets.KRX_PW }}
 
     steps:
       - uses: actions/checkout@v4
