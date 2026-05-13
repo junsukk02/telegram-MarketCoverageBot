@@ -21,16 +21,21 @@ jobs:
       KRX_PW: ${{ secrets.KRX_PW }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install -r requirements.txt
-      - run: python -m playwright install chromium
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install chromium
 
       - name: Morning
         if: github.event.schedule == '0 23 * * 0-4'
@@ -43,11 +48,15 @@ jobs:
       - name: Commit flow snapshot
         if: github.event.schedule == '35 6 * * 1-5'
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add flow_snapshot.json
-          git commit -m "Update flow snapshot" || echo "No changes to commit"
-          git push
+          if [ -f flow_snapshot.json ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add flow_snapshot.json
+            git commit -m "Update flow snapshot" || echo "No changes to commit"
+            git push
+          else
+            echo "flow_snapshot.json not found"
+          fi
 
       - name: Evening
         if: github.event.schedule == '0 12 * * 1-5'
