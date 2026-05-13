@@ -14,22 +14,24 @@ on:
           - evening
           - all
 
+permissions:
+  contents: write
+
 jobs:
   manual-test:
     runs-on: ubuntu-latest
 
-permissions:
-  contents: write
-
-  env:
-    TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-    TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-    KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
-    KRX_ID: ${{ secrets.KRX_ID }}
-    KRX_PW: ${{ secrets.KRX_PW }}
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
