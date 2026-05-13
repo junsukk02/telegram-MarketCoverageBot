@@ -1,6 +1,7 @@
 import os
 import sys
 import requests
+import time
 import yfinance as yf
 import json
 import html
@@ -18,8 +19,6 @@ HK = ZoneInfo("Asia/Hong_Kong")
 KOSPI_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd"
 KOSDAQ_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kosdaq_dd_trd"
 DERIVATIVE_INDEX_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/drvprod_dd_trd"
-KOSPI_STOCK_FUTURES_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/drv/eqsfu_stk_bydd_trd"
-KOSDAQ_STOCK_FUTURES_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/drv/eqkfu_ksq_bydd_trd"
 
 
 def send_telegram(text):
@@ -124,7 +123,7 @@ def get_yf_close_pct(ticker):
 def get_us10y():
     df = yf.download(
         "^TNX",
-        period="7d",
+        period="10d",
         interval="1d",
         progress=False,
         auto_adjust=False
@@ -137,12 +136,18 @@ def get_us10y():
     if hasattr(close, "columns"):
         close = close.iloc[:, 0]
 
-    latest = float(close.iloc[-1]) / 10
-    prev = float(close.iloc[-2]) / 10
+    latest_raw = float(close.iloc[-1])
+    prev_raw = float(close.iloc[-2])
 
-    bps_change = (latest - prev) * 100
+    # Yahoo ^TNX: 44.10 = 4.410%
+    latest_yield = latest_raw / 10
+    prev_yield = prev_raw / 10
 
-    return latest, bps_change
+    # yield %p change → bps
+    # 4.410% - 4.390% = 0.020%p = 2bps
+    bps_change = (latest_yield - prev_yield) * 100
+
+    return latest_yield, bps_change
 
 
 def call_krx_api(endpoint, bas_dd):
@@ -190,63 +195,51 @@ def get_krx_index(index_name, endpoint):
 
     raise ValueError(f"{index_name} 데이터를 최근 10일 내에서 찾을 수 없습니다.")
 
-def get_krx_futures(endpoint, market_name="야간", limit=5):
+def get_krx_derivative_indices(limit=None):
     for bas_dd in get_recent_dates(10):
-        rows = call_krx_api(endpoint, bas_dd)
+        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
 
         if not rows:
             continue
 
-        futures = []
+        indices = []
 
         for row in rows:
-            mkt_name = row.get("MKT_NM", "")
-            name = row.get("ISU_NM", "")
-            close_raw = row.get("TDD_CLSPRC", "-")
-            change_raw = row.get("CMPPREVDD_PRC", "-")
-            volume_raw = row.get("ACC_TRDVOL", "0")
-            value_raw = row.get("ACC_TRDVAL", "0")
+            name = row.get("IDX_NM", "")
+            close_raw = row.get("CLSPRC_IDX", "-")
 
-            if mkt_name != market_name:
+            if not name:
                 continue
 
             if close_raw in ["-", "", None]:
                 continue
 
-            if volume_raw in ["-", "", "0", None]:
-                continue
-
-            futures.append({
+            indices.append({
                 "name": name,
-                "close": parse_num(close_raw),
-                "change": parse_num(change_raw),
-                "volume": parse_num(volume_raw),
-                "trading_value": parse_num(value_raw),
+                "close": parse_num(row.get("CLSPRC_IDX")),
+                "change": parse_num(row.get("CMPPREVDD_IDX")),
+                "pct": parse_num(row.get("FLUC_RT")),
             })
 
-        if futures:
-            futures = sorted(
-                futures,
-                key=lambda x: x["trading_value"],
-                reverse=True
-            )
-
-            return futures[:limit]
+        if indices:
+            if limit:
+                return indices[:limit]
+            return indices
 
     return []
 
 
-def format_futures_list(futures):
-    if not futures:
+def format_derivative_indices(indices):
+    if not indices:
         return "데이터 없음"
 
     lines = []
 
-    for item in futures:
+    for item in indices:
         lines.append(
             f'{html.escape(item["name"])}: '
             f'{item["close"]:,.2f} '
-            f'({direction_emoji(item["change"])} {item["change"]:+,.2f})'
+            f'({direction_emoji(item["pct"])} {item["pct"]:+.2f}%)'
         )
 
     return "\n".join(lines)
@@ -289,46 +282,38 @@ def get_weather(lat, lon):
 def get_investor_flow(market):
     today = datetime.now(HK).strftime("%Y%m%d")
 
-    df = stock.get_market_trading_value_by_date(
-        today,
-        today,
-        market
-    )
+    for _ in range(3):
+        try:
+            df = stock.get_market_trading_value_by_date(
+                today,
+                today,
+                market
+            )
 
-    if df.empty:
-        return {
-            "개인": 0.0,
-            "기관": 0.0,
-            "외국인": 0.0
-        }
+            if not df.empty:
+                row = df.iloc[-1]
 
-    row = df.iloc[-1]
+                return {
+                    "개인": float(row.get("개인", 0)),
+                    "기관": float(row.get("기관합계", row.get("기관", 0))),
+                    "외국인": float(row.get("외국인합계", row.get("외국인", 0))),
+                }
+
+        except Exception as e:
+            print(f"Investor flow retry: {e}")
+
+        time.sleep(1)
 
     return {
-        "개인": float(row.get("개인", 0)),
-        "기관": float(row.get("기관합계", row.get("기관", 0))),
-        "외국인": float(row.get("외국인합계", row.get("외국인", 0))),
+        "개인": 0.0,
+        "기관": 0.0,
+        "외국인": 0.0
     }
     
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
-
-    kospi_night_futures = get_krx_futures(
-        KOSPI_STOCK_FUTURES_ENDPOINT,
-        market_name="야간",
-        limit=5
-    )
-
-    kosdaq_night_futures = get_krx_futures(
-        KOSDAQ_STOCK_FUTURES_ENDPOINT,
-        market_name="야간",
-        limit=5
-    )
-
-    kospi_night_futures_text = format_futures_list(kospi_night_futures)
-    kosdaq_night_futures_text = format_futures_list(kosdaq_night_futures)
 
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
@@ -348,19 +333,11 @@ Good Morning Junsuk!
 
 NASDAQ 전일 종가: {nasdaq:,.2f} ({direction_emoji(nasdaq_pct)} {nasdaq_pct:+.2f}%)
 S&P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%)
-US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.0f}bps)
-
-<b>KRX 야간 Futures</b>
-
-<b>KOSPI</b>
-{kospi_night_futures_text}
-
-<b>KOSDAQ</b>
-{kosdaq_night_futures_text}
+US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.1f}bps)
 """.strip()
 
     send_telegram(msg)
-
+    
 def afternoon_report():
     kospi, kospi_pct = get_yf_close_pct("^KS11")
     kosdaq, kosdaq_pct = get_yf_close_pct("^KQ11")
@@ -370,23 +347,11 @@ def afternoon_report():
 
     save_flow_snapshot(kospi_flow, kosdaq_flow)
 
+    derivative_indices = get_krx_derivative_indices()
+    derivative_text = format_derivative_indices(derivative_indices)
+
     nikkei, nikkei_pct = get_yf_close_pct("^N225")
     hsi, hsi_pct = get_yf_close_pct("^HSI")
-
-    kospi_regular_futures = get_krx_futures(
-        KOSPI_STOCK_FUTURES_ENDPOINT,
-        market_name="정규",
-        limit=5
-    )
-
-    kosdaq_regular_futures = get_krx_futures(
-        KOSDAQ_STOCK_FUTURES_ENDPOINT,
-        market_name="정규",
-        limit=5
-    )
-
-    kospi_regular_futures_text = format_futures_list(kospi_regular_futures)
-    kosdaq_regular_futures_text = format_futures_list(kosdaq_regular_futures)
 
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
@@ -405,14 +370,6 @@ Good Afternoon Junsuk!
 KOSPI 종가: {kospi:,.2f} ({direction_emoji(kospi_pct)} {kospi_pct:+.2f}%)
 KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
 
-<b>KRX Regular Futures</b>
-
-<b>KOSPI</b>
-{kospi_regular_futures_text}
-
-<b>KOSDAQ</b>
-{kosdaq_regular_futures_text}
-
 <b>KOSPI 순매수</b>
 개인: {fmt_amount(kospi_flow["개인"])}
 기관: {fmt_amount(kospi_flow["기관"])}
@@ -422,6 +379,9 @@ KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
 개인: {fmt_amount(kosdaq_flow["개인"])}
 기관: {fmt_amount(kosdaq_flow["기관"])}
 외국인: {fmt_amount(kosdaq_flow["외국인"])}
+
+<b>KRX 지수 파생상품</b>
+{derivative_text}
 
 NIKKEI225 종가: {nikkei:,.2f} ({direction_emoji(nikkei_pct)} {nikkei_pct:+.2f}%)
 HSI 종가: {hsi:,.2f} ({direction_emoji(hsi_pct)} {hsi_pct:+.2f}%)
