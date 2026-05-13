@@ -2,3 +2,4 @@ yfinance
 pykrx
 pandas
 requests
+playwright
