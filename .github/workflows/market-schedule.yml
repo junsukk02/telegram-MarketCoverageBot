@@ -2,9 +2,9 @@ name: Telegram Market Schedule
 
 on:
   schedule:
-    - cron: '0 23 * * 0-4'   # HK 07:00 Morning
-    - cron: '35 6 * * 1-5'   # HK 14:35 Afternoon
-    - cron: '0 12 * * 1-5'   # HK 20:00 Evening
+    - cron: '0 23 * * 0-4'
+    - cron: '35 6 * * 1-5'
+    - cron: '0 12 * * 1-5'
 
 permissions:
   contents: write
@@ -13,15 +13,17 @@ jobs:
   send-market-alert:
     runs-on: ubuntu-latest
 
-  env:
-    TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-    TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-    KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
-    KRX_ID: ${{ secrets.KRX_ID }}
-    KRX_PW: ${{ secrets.KRX_PW }}
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
