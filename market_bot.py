@@ -85,8 +85,16 @@ def save_flow_snapshot(kospi_flow, kosdaq_flow):
     snapshot = {
         "date": datetime.now(HK).strftime("%Y%m%d"),
         "saved_at": datetime.now(HK).strftime("%Y-%m-%d %H:%M:%S"),
-        "kospi_flow": kospi_flow,
-        "kosdaq_flow": kosdaq_flow,
+        "kospi_flow": {
+            "개인": float(kospi_flow["개인"]),
+            "기관": float(kospi_flow["기관"]),
+            "외국인": float(kospi_flow["외국인"]),
+        },
+        "kosdaq_flow": {
+            "개인": float(kosdaq_flow["개인"]),
+            "기관": float(kosdaq_flow["기관"]),
+            "외국인": float(kosdaq_flow["외국인"]),
+        }
     }
 
     with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
@@ -421,6 +429,11 @@ def afternoon_report():
     kospi, kospi_pct = get_yf_close_pct("^KS11")
     kosdaq, kosdaq_pct = get_yf_close_pct("^KQ11")
 
+    kospi_flow = get_investor_flow("KOSPI")
+    kosdaq_flow = get_investor_flow("KOSDAQ")
+
+    save_flow_snapshot(kospi_flow, kosdaq_flow)
+
     derivative_indices = get_krx_derivative_indices()
     derivative_text = format_derivative_indices(derivative_indices)
 
@@ -444,6 +457,16 @@ Good Afternoon Junsuk!
 KOSPI 종가: {kospi:,.2f} ({direction_emoji(kospi_pct)} {kospi_pct:+.2f}%)
 KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
 
+<b>KOSPI 순매수</b>
+개인: {fmt_amount(kospi_flow["개인"])}
+기관: {fmt_amount(kospi_flow["기관"])}
+외국인: {fmt_amount(kospi_flow["외국인"])}
+
+<b>KOSDAQ 순매수</b>
+개인: {fmt_amount(kosdaq_flow["개인"])}
+기관: {fmt_amount(kosdaq_flow["기관"])}
+외국인: {fmt_amount(kosdaq_flow["외국인"])}
+
 <b>KRX 지수 파생상품</b>
 {derivative_text}
 
@@ -458,12 +481,38 @@ def evening_report():
     kospi, kospi_pct = get_yf_close_pct("^KS11")
     kosdaq, kosdaq_pct = get_yf_close_pct("^KQ11")
 
-    kospi_flow = get_investor_flow("KOSPI")
-    kosdaq_flow = get_investor_flow("KOSDAQ")
+    final_kospi_flow = get_investor_flow("KOSPI")
+    final_kosdaq_flow = get_investor_flow("KOSDAQ")
+
+    snapshot = load_flow_snapshot()
 
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
     hk_weather = get_weather(22.3193, 114.1694)
+
+    today_key = datetime.now(HK).strftime("%Y%m%d")
+
+    if snapshot is None:
+        change_text = "비교용 Afternoon snapshot 데이터 없음"
+
+    elif snapshot.get("date") != today_key:
+        change_text = "비교용 Afternoon snapshot이 오늘 데이터가 아님"
+
+    else:
+        prev_kospi = snapshot["kospi_flow"]
+        prev_kosdaq = snapshot["kosdaq_flow"]
+
+        change_text = f"""
+<b>수급 괴리 vs Afternoon Report</b>
+
+KOSPI 개인: {fmt_amount(final_kospi_flow["개인"] - prev_kospi["개인"])}
+KOSPI 기관: {fmt_amount(final_kospi_flow["기관"] - prev_kospi["기관"])}
+KOSPI 외국인: {fmt_amount(final_kospi_flow["외국인"] - prev_kospi["외국인"])}
+
+KOSDAQ 개인: {fmt_amount(final_kosdaq_flow["개인"] - prev_kosdaq["개인"])}
+KOSDAQ 기관: {fmt_amount(final_kosdaq_flow["기관"] - prev_kosdaq["기관"])}
+KOSDAQ 외국인: {fmt_amount(final_kosdaq_flow["외국인"] - prev_kosdaq["외국인"])}
+""".strip()
 
     msg = f"""
 Good Evening Junsuk!
@@ -475,23 +524,26 @@ Good Evening Junsuk!
 <b><i>서울: {seoul_weather}</i></b>
 <b><i>홍콩: {hk_weather}</i></b>
 
-<b><i>KRX 당일 최종 순매수 거래대금입니다.</i></b>
+<b><i>KRX 마감 이후 조정된 최종 수급 데이터입니다.</i></b>
 
 KOSPI 종가: {kospi:,.2f} ({direction_emoji(kospi_pct)} {kospi_pct:+.2f}%)
 KOSDAQ 종가: {kosdaq:,.2f} ({direction_emoji(kosdaq_pct)} {kosdaq_pct:+.2f}%)
 
 <b>KOSPI 최종 순매수</b>
-개인: {fmt_amount(kospi_flow["개인"])}
-기관: {fmt_amount(kospi_flow["기관"])}
-외국인: {fmt_amount(kospi_flow["외국인"])}
+개인: {fmt_amount(final_kospi_flow["개인"])}
+기관: {fmt_amount(final_kospi_flow["기관"])}
+외국인: {fmt_amount(final_kospi_flow["외국인"])}
 
 <b>KOSDAQ 최종 순매수</b>
-개인: {fmt_amount(kosdaq_flow["개인"])}
-기관: {fmt_amount(kosdaq_flow["기관"])}
-외국인: {fmt_amount(kosdaq_flow["외국인"])}
+개인: {fmt_amount(final_kosdaq_flow["개인"])}
+기관: {fmt_amount(final_kosdaq_flow["기관"])}
+외국인: {fmt_amount(final_kosdaq_flow["외국인"])}
+
+{change_text}
 """.strip()
 
     send_telegram(msg)
+
 
 if __name__ == "__main__":
     try:
