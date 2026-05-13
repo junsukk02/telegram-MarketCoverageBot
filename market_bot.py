@@ -24,9 +24,11 @@ DERIVATIVE_INDEX_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/drvprod_dd_
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
+    safe_text = text[:3900]
+
     res = requests.post(url, json={
         "chat_id": CHAT_ID,
-        "text": text,
+        "text": safe_text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True
     })
@@ -285,33 +287,41 @@ def get_today_string():
 def get_investor_flow(market):
     today = datetime.now(HK).strftime("%Y%m%d")
 
-    for _ in range(3):
-        try:
-            df = stock.get_market_trading_value_by_date(
-                today,
-                today,
-                market
-            )
+    try:
+        df = stock.get_market_trading_value_by_date(
+            today,
+            today,
+            market
+        )
 
-            if not df.empty:
-                row = df.iloc[-1]
+        if df.empty:
+            return {
+                "개인": 0.0,
+                "기관": 0.0,
+                "외국인": 0.0,
+                "data_date": today,
+                "status": "empty"
+            }
 
-                return {
-                    "개인": float(row.get("개인", 0)),
-                    "기관": float(row.get("기관합계", row.get("기관", 0))),
-                    "외국인": float(row.get("외국인합계", row.get("외국인", 0))),
-                }
+        row = df.iloc[-1]
 
-        except Exception as e:
-            print(f"Investor flow retry: {e}")
+        return {
+            "개인": float(row.get("개인", 0)),
+            "기관": float(row.get("기관합계", row.get("기관", 0))),
+            "외국인": float(row.get("외국인합계", row.get("외국인", 0))),
+            "data_date": df.index[-1].strftime("%Y%m%d") if hasattr(df.index[-1], "strftime") else str(df.index[-1]),
+            "status": "ok"
+        }
 
-        time.sleep(1)
-
-    return {
-        "개인": 0.0,
-        "기관": 0.0,
-        "외국인": 0.0
-    }
+    except Exception as e:
+        print(f"Investor flow error for {market}: {e}")
+        return {
+            "개인": 0.0,
+            "기관": 0.0,
+            "외국인": 0.0,
+            "data_date": today,
+            "status": "error"
+        }
     
 def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
@@ -418,13 +428,13 @@ def evening_report():
         change_text = f"""
 <b>수급 괴리 vs Afternoon Report</b>
 
-KOSPI 개인: {fmt_amount(final_kospi_flow["개인"] - prev_kospi["개인"])}
-KOSPI 기관: {fmt_amount(final_kospi_flow["기관"] - prev_kospi["기관"])}
-KOSPI 외국인: {fmt_amount(final_kospi_flow["외국인"] - prev_kospi["외국인"])}
+KOSPI 개인: {fmt_amount(final_kospi_flow["개인"] - float(prev_kospi["개인"]))}
+KOSPI 기관: {fmt_amount(final_kospi_flow["기관"] - float(prev_kospi["기관"]))}
+KOSPI 외국인: {fmt_amount(final_kospi_flow["외국인"] - float(prev_kospi["외국인"]))}
 
-KOSDAQ 개인: {fmt_amount(final_kosdaq_flow["개인"] - prev_kosdaq["개인"])}
-KOSDAQ 기관: {fmt_amount(final_kosdaq_flow["기관"] - prev_kosdaq["기관"])}
-KOSDAQ 외국인: {fmt_amount(final_kosdaq_flow["외국인"] - prev_kosdaq["외국인"])}
+KOSDAQ 개인: {fmt_amount(final_kosdaq_flow["개인"] - float(prev_kosdaq["개인"]))}
+KOSDAQ 기관: {fmt_amount(final_kosdaq_flow["기관"] - float(prev_kosdaq["기관"]))}
+KOSDAQ 외국인: {fmt_amount(final_kosdaq_flow["외국인"] - float(prev_kosdaq["외국인"]))}
 """.strip()
 
     msg = f"""
