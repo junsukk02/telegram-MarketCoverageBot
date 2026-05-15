@@ -108,27 +108,57 @@ def load_flow_snapshot():
         return json.load(f)
 
 def get_yf_close_pct(ticker):
-    df = yf.download(
-        ticker,
-        period="7d",
-        interval="1d",
-        progress=False,
-        auto_adjust=False
-    )
+    fallback_map = {
+        "^KS11": ["^KS11", "KOSPI.KS"],
+        "^KQ11": ["^KQ11", "KQ11.KQ"],
+        "^IXIC": ["^IXIC"],
+        "^GSPC": ["^GSPC"],
+        "^N225": ["^N225"],
+        "^HSI": ["^HSI"],
+    }
 
-    df = df.dropna()
+    tickers = fallback_map.get(ticker, [ticker])
 
-    close = df["Close"]
+    for t in tickers:
+        try:
+            df = yf.download(
+                t,
+                period="10d",
+                interval="1d",
+                progress=False,
+                auto_adjust=False,
+                threads=False
+            )
 
-    if hasattr(close, "columns"):
-        close = close.iloc[:, 0]
+            if df is None or df.empty:
+                continue
 
-    latest = float(close.iloc[-1])
-    prev = float(close.iloc[-2])
+            df = df.dropna()
 
-    pct = (latest / prev - 1) * 100
+            if df.empty:
+                continue
 
-    return latest, pct
+            close = df["Close"]
+
+            if hasattr(close, "columns"):
+                close = close.iloc[:, 0]
+
+            close = close.dropna()
+
+            if len(close) < 2:
+                continue
+
+            latest = float(close.iloc[-1])
+            prev = float(close.iloc[-2])
+
+            pct = (latest / prev - 1) * 100
+
+            return latest, pct
+
+        except Exception as e:
+            print(f"Yahoo Finance error for {t}: {e}")
+
+    return 0.0, 0.0
 
 
 def get_us10y():
