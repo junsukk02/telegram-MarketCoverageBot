@@ -6,6 +6,13 @@ on:
     - cron: '35 6 * * 1-5'
     - cron: '0 12 * * 1-5'
 
+concurrency:
+  group: telegram-market-schedule
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
 permissions:
   contents: write
 
