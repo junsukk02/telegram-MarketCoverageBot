@@ -1,5 +1,7 @@
 import os
 import sys
+import requests
+import yfinance as yf
 import json
 import html
 from datetime import datetime, timedelta
@@ -68,6 +70,27 @@ def split_telegram_text(text, limit=3500):
         chunks.append(current)
 
     return chunks or [text[:limit]]
+
+KRX_NIGHT_DERIVATIVE_INDEX_TARGETS = [
+    {
+        "api_name": "코스피 200 선물지수 (야간)",
+        "display_name": "코스피200선물지수 (야간)",
+        "aliases": [
+            "코스피 200 선물지수 (야간)",
+            "코스피200선물지수 (야간)",
+            "코스피200 야간선물지수",
+        ],
+    },
+    {
+        "api_name": "코스닥 150 선물지수 (야간)",
+        "display_name": "코스닥150선물지수 (야간)",
+        "aliases": [
+            "코스닥 150 선물지수 (야간)",
+            "코스닥150선물지수 (야간)",
+            "코스닥150 야간선물지수",
+        ],
+    },
+]
 
 
 def send_telegram(text):
@@ -340,23 +363,25 @@ def get_krx_derivative_indices():
     return []
 
 
+
+def normalize_krx_index_name(name):
+    return str(name or "").replace(" ", "").strip()
+
+
 def get_krx_night_derivative_indices(strict_today=False):
     dates = [datetime.now(HK).strftime("%Y%m%d")] if strict_today else get_recent_dates(10)
-
     targets = []
+
     for target in KRX_NIGHT_DERIVATIVE_INDEX_TARGETS:
-        aliases = [target["display_name"], *target.get("aliases", [])]
+        aliases = [target["api_name"], target["display_name"], *target.get("aliases", [])]
         targets.append({
+            "api_name": target["api_name"],
             "display_name": target["display_name"],
             "normalized_aliases": {normalize_krx_index_name(alias) for alias in aliases},
         })
 
     for bas_dd in dates:
-        try:
-            rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
-        except Exception as e:
-            print(f"KRX night derivative API error: {e}")
-            continue
+        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
 
         if not rows:
             continue
@@ -365,36 +390,40 @@ def get_krx_night_derivative_indices(strict_today=False):
 
         for row in rows:
             name = row.get("IDX_NM", "")
+            normalized_name = normalize_krx_index_name(name)
             close_raw = row.get("CLSPRC_IDX", "-")
 
             if close_raw in ["-", "", None]:
                 continue
 
-            normalized_name = normalize_krx_index_name(name)
-
             for target in targets:
-                if normalized_name in target["normalized_aliases"]:
-                    matched_by_display_name[target["display_name"]] = {
-                        "name": target["display_name"],
-                        "close": parse_num(row.get("CLSPRC_IDX")),
-                        "change": parse_num(row.get("CMPPREVDD_IDX")),
-                        "pct": parse_num(row.get("FLUC_RT")),
-                        "date": row.get("BAS_DD", bas_dd),
-                    }
+                if normalized_name not in target["normalized_aliases"]:
+                    continue
 
-        matched = [matched_by_display_name[t["display_name"]] for t in targets if t["display_name"] in matched_by_display_name]
+                matched_by_display_name[target["display_name"]] = {
+                    "name": target["display_name"],
+                    "api_name": name,
+                    "close": parse_num(row.get("CLSPRC_IDX")),
+                    "change": parse_num(row.get("CMPPREVDD_IDX")),
+                    "pct": parse_num(row.get("FLUC_RT")),
+                    "date": row.get("BAS_DD", bas_dd),
+                }
 
-        if matched:
-            return matched
+        if matched_by_display_name:
+            return [
+                matched_by_display_name[target["display_name"]]
+                for target in targets
+                if target["display_name"] in matched_by_display_name
+            ]
 
     return []
-
 
 def format_derivative_indices(indices):
     if not indices:
         return "데이터 없음"
 
     lines = []
+
     for item in indices:
         lines.append(
             f'{html.escape(item["name"])}: '
@@ -403,7 +432,6 @@ def format_derivative_indices(indices):
         )
 
     return "\n".join(lines)
-
 
 def get_weather(lat, lon):
     try:
@@ -478,10 +506,9 @@ def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
-
-    night_indices = get_krx_night_derivative_indices()
-    night_text = format_derivative_indices(night_indices)
-
+    night_derivative_indices = get_krx_night_derivative_indices()
+    night_derivative_text = format_derivative_indices(night_derivative_indices)
+    
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
     hk_weather = get_weather(22.3193, 114.1694)
@@ -503,7 +530,8 @@ S&amp;P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%
 US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.1f}bps)
 
 <b>KRX 야간 선물지수</b>
-{night_text}
+{night_derivative_text}
+
 """.strip()
 
     send_telegram(msg)
