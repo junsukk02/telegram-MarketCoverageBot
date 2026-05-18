@@ -1,11 +1,9 @@
 import os
 import sys
 import requests
-import time
 import yfinance as yf
 import json
 import html
-from playwright.sync_api import sync_playwright
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pykrx import stock
@@ -20,6 +18,27 @@ HK = ZoneInfo("Asia/Hong_Kong")
 KOSPI_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd"
 KOSDAQ_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kosdaq_dd_trd"
 DERIVATIVE_INDEX_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/drvprod_dd_trd"
+
+KRX_NIGHT_DERIVATIVE_INDEX_TARGETS = [
+    {
+        "api_name": "코스피 200 선물지수 (야간)",
+        "display_name": "코스피200선물지수 (야간)",
+        "aliases": [
+            "코스피 200 선물지수 (야간)",
+            "코스피200선물지수 (야간)",
+            "코스피200 야간선물지수",
+        ],
+    },
+    {
+        "api_name": "코스닥 150 선물지수 (야간)",
+        "display_name": "코스닥150선물지수 (야간)",
+        "aliases": [
+            "코스닥 150 선물지수 (야간)",
+            "코스닥150선물지수 (야간)",
+            "코스닥150 야간선물지수",
+        ],
+    },
+]
 
 
 def send_telegram(text):
@@ -278,6 +297,61 @@ def get_krx_derivative_indices():
     return []
 
 
+
+def normalize_krx_index_name(name):
+    return str(name or "").replace(" ", "").strip()
+
+
+def get_krx_night_derivative_indices(strict_today=False):
+    dates = [datetime.now(HK).strftime("%Y%m%d")] if strict_today else get_recent_dates(10)
+    targets = []
+
+    for target in KRX_NIGHT_DERIVATIVE_INDEX_TARGETS:
+        aliases = [target["api_name"], target["display_name"], *target.get("aliases", [])]
+        targets.append({
+            "api_name": target["api_name"],
+            "display_name": target["display_name"],
+            "normalized_aliases": {normalize_krx_index_name(alias) for alias in aliases},
+        })
+
+    for bas_dd in dates:
+        rows = call_krx_api(DERIVATIVE_INDEX_ENDPOINT, bas_dd)
+
+        if not rows:
+            continue
+
+        matched_by_display_name = {}
+
+        for row in rows:
+            name = row.get("IDX_NM", "")
+            normalized_name = normalize_krx_index_name(name)
+            close_raw = row.get("CLSPRC_IDX", "-")
+
+            if close_raw in ["-", "", None]:
+                continue
+
+            for target in targets:
+                if normalized_name not in target["normalized_aliases"]:
+                    continue
+
+                matched_by_display_name[target["display_name"]] = {
+                    "name": target["display_name"],
+                    "api_name": name,
+                    "close": parse_num(row.get("CLSPRC_IDX")),
+                    "change": parse_num(row.get("CMPPREVDD_IDX")),
+                    "pct": parse_num(row.get("FLUC_RT")),
+                    "date": row.get("BAS_DD", bas_dd),
+                }
+
+        if matched_by_display_name:
+            return [
+                matched_by_display_name[target["display_name"]]
+                for target in targets
+                if target["display_name"] in matched_by_display_name
+            ]
+
+    return []
+
 def format_derivative_indices(indices):
     if not indices:
         return "데이터 없음"
@@ -293,92 +367,6 @@ def format_derivative_indices(indices):
 
     return "\n".join(lines)
 
-def get_esignal_kospi200_night_future():
-    try:
-        url = "https://esignal.co.kr/kospi200-futures-night/"
-
-        captured = {}
-
-        def handle_response(response):
-            try:
-                if "socket.io" not in response.url:
-                    return
-
-                body = response.text()
-
-                if '42["populate"' not in body:
-                    return
-
-                import re
-
-                match = re.search(r'42\["populate","(.+?)"\]', body)
-
-                if not match:
-                    return
-
-                raw_json = match.group(1)
-                raw_json = raw_json.encode().decode("unicode_escape")
-
-                data = json.loads(raw_json)
-
-                captured["data"] = data
-
-            except Exception:
-                pass
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            )
-
-            page.on("response", handle_response)
-
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-
-            for _ in range(10):
-                if "data" in captured:
-                    break
-                page.wait_for_timeout(1000)
-
-            browser.close()
-
-        if "data" not in captured:
-            return None
-
-        data = captured["data"]
-
-        return {
-            "price": data.get("value", "0"),
-            "diff": data.get("value_diff", "0"),
-            "prev_close": data.get("value_day", "0"),
-            "open": data.get("open", "0"),
-            "high": data.get("high", "0"),
-            "low": data.get("low", "0"),
-            "volume": data.get("volume", 0),
-            "updated_at": data.get("tstamp", ""),
-        }
-
-    except Exception as e:
-        print(f"eSignal KOSPI200 night future error: {e}")
-        return None
-        
-def format_esignal_kospi200_night_future(data):
-    if data is None:
-        return "데이터 없음"
-
-    price = parse_num(data["price"])
-    diff = parse_num(data["diff"])
-    prev_close = parse_num(data["prev_close"])
-
-    pct = (diff / prev_close * 100) if prev_close != 0 else 0
-
-    return (
-        f'{price:,.2f} '
-        f'({direction_emoji(diff)} {pct:+.2f}%)\n'
-        f'고가 {data["high"]} / 저가 {data["low"]} / 거래량 {int(data["volume"]):,}'
-    )
-    
 def get_weather(lat, lon):
     try:
         url = (
@@ -460,8 +448,8 @@ def morning_report():
     nasdaq, nasdaq_pct = get_yf_close_pct("^IXIC")
     spx, spx_pct = get_yf_close_pct("^GSPC")
     us10y, us10y_bps = get_us10y()
-    kospi200_night = get_esignal_kospi200_night_future()
-    kospi200_night_text = format_esignal_kospi200_night_future(kospi200_night)
+    night_derivative_indices = get_krx_night_derivative_indices()
+    night_derivative_text = format_derivative_indices(night_derivative_indices)
     
     today_str = get_today_string()
     seoul_weather = get_weather(37.5665, 126.9780)
@@ -483,8 +471,8 @@ NASDAQ 전일 종가: {nasdaq:,.2f} ({direction_emoji(nasdaq_pct)} {nasdaq_pct:+
 S&P500 전일 종가: {spx:,.2f} ({direction_emoji(spx_pct)} {spx_pct:+.2f}%)
 US10Y Yield: {us10y:.3f}% ({direction_emoji(us10y_bps)} {us10y_bps:+.1f}bps)
 
-<b>KOSPI200 야간선물</b>
-{kospi200_night_text}
+<b>KRX 야간 선물지수</b>
+{night_derivative_text}
 
 """.strip()
 
